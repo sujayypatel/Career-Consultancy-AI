@@ -67,6 +67,7 @@ Strategist Persona: Goes beyond generic advice to suggest specific exams (JEE, G
 1. Clone the Repository
    
 git clone https://github.com/sujayypatel/Career-Consultancy-AI.git
+
 cd Career-Consultancy-AI.git
 
 
@@ -112,6 +113,8 @@ Network Reuse: Using requests.Session() to keep TCP connections alive.
 Audio Compression: Frontend forces audio/webm recording (50KB) instead of WAV (5MB).
 
 VAD Tuning: Silence threshold reduced to 800ms for snappier turn-taking.
+
+here is the demo video:- [https://youtu.be/6QK9BId_od0]
 
 👨‍💻 About the Creator
 
