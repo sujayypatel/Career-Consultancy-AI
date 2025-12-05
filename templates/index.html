@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CareerGenius AI (Speed Optimized)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .bar { width: 8px; background: #10b981; margin: 0 3px; border-radius: 4px; transition: height 0.05s; }
+        body { background-color: #111827; color: white; }
+    </style>
+</head>
+<body class="h-screen flex flex-col items-center justify-center font-sans">
+
+    <div class="max-w-lg w-full bg-gray-800 p-8 rounded-3xl shadow-2xl border border-gray-700 relative">
+        <div class="text-center mb-6">
+            <h1 class="text-3xl font-bold tracking-tight">Career<span class="text-emerald-400">Genius</span></h1>
+            <p class="text-gray-400 mt-2 text-sm">Real-Time Consultant</p>
+        </div>
+
+        <!-- Latency Stats -->
+        <div class="flex justify-between items-center bg-gray-900 rounded-lg p-3 mb-6 text-xs text-gray-400 border border-gray-700/50">
+            <div class="text-center"><p class="font-bold text-emerald-400" id="lat-stt">-</p><p>Ear</p></div>
+            <div class="text-center border-l border-gray-700 pl-4"><p class="font-bold text-blue-400" id="lat-llm">-</p><p>Brain</p></div>
+            <div class="text-center border-l border-gray-700 pl-4"><p class="font-bold text-orange-400" id="lat-tts">-</p><p>Mouth</p></div>
+            <div class="text-center border-l border-gray-700 pl-4"><p class="font-bold text-white" id="lat-total">-</p><p>Total</p></div>
+        </div>
+
+        <!-- Visualizer -->
+        <div class="h-24 bg-gray-900 rounded-xl mb-6 flex flex-col items-center justify-center overflow-hidden relative border border-gray-800">
+            <p class="text-gray-500 font-semibold tracking-widest text-xs uppercase mb-2" id="status-text">Tap Start</p>
+            <div class="flex items-center justify-center h-12 w-full px-8" id="bars-container"></div>
+        </div>
+
+        <!-- Chat Box -->
+        <div class="mb-6 space-y-4 min-h-[100px] max-h-[180px] overflow-y-auto">
+            <div class="bg-gray-700/40 p-4 rounded-xl hidden" id="user-msg-box"><p class="text-xs text-orange-400 font-bold uppercase mb-1">You</p><p class="text-md text-gray-200" id="user-text">...</p></div>
+            <div class="bg-emerald-900/20 p-4 rounded-xl border border-emerald-500/20 hidden" id="ai-msg-box"><p class="text-xs text-emerald-400 font-bold uppercase mb-1">Consultant</p><p class="text-md text-gray-200" id="ai-text">...</p></div>
+        </div>
+
+        <div class="flex justify-center gap-4">
+            <button id="startBtn" class="px-8 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 font-bold shadow-lg transition-all">START SESSION</button>
+            <button id="stopBtn" class="hidden px-8 py-3 rounded-full bg-red-600 hover:bg-red-500 font-bold shadow-lg transition-all">END SESSION</button>
+        </div>
+    </div>
+
+    <script>
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusText = document.getElementById('status-text');
+        const barsContainer = document.getElementById('bars-container');
+        const userMsgBox = document.getElementById('user-msg-box');
+        const aiMsgBox = document.getElementById('ai-msg-box');
+        const userTextEl = document.getElementById('user-text');
+        const aiTextEl = document.getElementById('ai-text');
+        const latStt = document.getElementById('lat-stt');
+        const latLlm = document.getElementById('lat-llm');
+        const latTts = document.getElementById('lat-tts');
+        const latTotal = document.getElementById('lat-total');
+
+        let audioContext, analyser, microphone, mediaRecorder;
+        let audioChunks = [], isSessionActive = false, isProcessing = false;
+        let silenceStart = Date.now(), isSpeaking = false, vadInterval;
+        
+        // --- SPEED TUNING ---
+        const SILENCE_THRESHOLD = 700;  // 0.7s Silence = End of speech
+        const VOLUME_THRESHOLD = 30;    // Ignore fan/AC noise
+
+        const numBars = 30, bars = [];
+        for(let i=0; i<numBars; i++) {
+            const bar = document.createElement('div');
+            bar.className = 'bar h-1';
+            barsContainer.appendChild(bar);
+            bars.push(bar);
+        }
+
+        startBtn.addEventListener('click', startSession);
+        stopBtn.addEventListener('click', endSession);
+
+        async function startSession() {
+            try {
+                // 1. Force Low Quality Audio (Faster Upload)
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true } 
+                });
+                
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+                analyser.fftSize = 256;
+
+                isSessionActive = true;
+                startBtn.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
+                startListening(stream);
+                startVisualizer();
+            } catch (err) { alert("Mic Access Required"); }
+        }
+
+        function startListening(stream) {
+            if (!isSessionActive) return;
+            statusText.innerText = "Listening...";
+            statusText.className = "text-orange-400 font-semibold tracking-widest text-xs uppercase mb-2";
+            audioChunks = [];
+            
+            // 2. FORCE WEBM (Small File Size)
+            let options = { mimeType: 'audio/webm' };
+            if (!MediaRecorder.isTypeSupported('audio/webm')) options = {}; // Safari Fallback
+
+            mediaRecorder = new MediaRecorder(stream, options);
+            mediaRecorder.start();
+            mediaRecorder.addEventListener("dataavailable", event => {
+                if(event.data.size > 0) audioChunks.push(event.data);
+            });
+
+            isSpeaking = false;
+            silenceStart = Date.now();
+            clearInterval(vadInterval);
+            vadInterval = setInterval(checkSilence, 100);
+        }
+
+        function checkSilence() {
+            if (isProcessing || !isSessionActive) return;
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+
+            if (average > VOLUME_THRESHOLD) {
+                if (!isSpeaking) {
+                    isSpeaking = true;
+                    statusText.innerText = "Listening...";
+                    statusText.className = "text-green-400 font-semibold tracking-widest text-xs uppercase mb-2";
+                }
+                silenceStart = Date.now();
+            } else {
+                if (isSpeaking && (Date.now() - silenceStart > SILENCE_THRESHOLD)) {
+                    isSpeaking = false;
+                    clearInterval(vadInterval);
+                    if(mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+                    setTimeout(sendAudio, 100); 
+                }
+            }
+        }
+
+        async function sendAudio() {
+            isProcessing = true;
+            statusText.innerText = "Thinking...";
+            statusText.className = "text-blue-400 font-semibold tracking-widest text-xs uppercase mb-2 animate-pulse";
+            
+            if(audioChunks.length === 0) await new Promise(r => setTimeout(r, 200));
+
+            // 3. Send as WebM
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+            formData.append("audio", audioBlob);
+
+            try {
+                const response = await fetch('/process_voice', { method: 'POST', body: formData });
+                if (response.ok) {
+                    latStt.innerText = (response.headers.get('X-Latency-STT') || '-') + 'ms';
+                    latLlm.innerText = (response.headers.get('X-Latency-LLM') || '-') + 'ms';
+                    latTts.innerText = (response.headers.get('X-Latency-TTS') || '-') + 'ms';
+                    latTotal.innerText = (response.headers.get('X-Latency-Total') || '-') + 'ms';
+
+                    const audioUrl = URL.createObjectURL(await response.blob());
+                    const audio = new Audio(audioUrl);
+                    
+                    statusText.innerText = "Speaking...";
+                    statusText.className = "text-emerald-500 font-semibold tracking-widest text-xs uppercase mb-2";
+                    fetchTextUpdates();
+                    audio.play();
+                    audio.onended = () => {
+                        isProcessing = false;
+                        if (isSessionActive) startListening(microphone.mediaStream);
+                    };
+                } else {
+                    console.error("Server Error");
+                    isProcessing = false;
+                    if(isSessionActive) startListening(microphone.mediaStream);
+                }
+            } catch (e) { 
+                console.error(e);
+                isProcessing = false; 
+            }
+        }
+
+        function endSession() {
+            isSessionActive = false;
+            clearInterval(vadInterval);
+            if(mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+            startBtn.classList.remove('hidden');
+            stopBtn.classList.add('hidden');
+            statusText.innerText = "Session Ended";
+            bars.forEach(b => b.style.height = '4px');
+        }
+
+        async function fetchTextUpdates() {
+            const res = await fetch('/get_latest_text');
+            const data = await res.json();
+            if(data.user) { userMsgBox.classList.remove('hidden'); userTextEl.innerText = data.user; }
+            if(data.ai) { aiMsgBox.classList.remove('hidden'); aiTextEl.innerText = data.ai; }
+        }
+
+        function startVisualizer() {
+            function draw() {
+                if (!isSessionActive) return;
+                requestAnimationFrame(draw);
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                analyser.getByteFrequencyData(dataArray);
+                const step = Math.floor(dataArray.length / numBars);
+                for (let i = 0; i < numBars; i++) {
+                    const value = dataArray[i * step];
+                    const height = Math.max(4, (value / 255) * 60);
+                    bars[i].style.height = height + 'px';
+                    bars[i].style.backgroundColor = value > 150 ? '#f97316' : '#10b981';
+                }
+            }
+            draw();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+.env
+__pycache__/
+static/user_input.webm
+static/reply.mp3
+.DS_Store
